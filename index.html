@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>7-Eleven Signage Maker - 087 IMUS 1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2pdf.js for client-side PDF generation and local storage -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;600;700;800;900&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .signage-font {
+            font-family: 'Oswald', 'Arial Narrow', sans-serif;
+            font-stretch: condensed;
+        }
+
+        /* Screen Preview A4 Sheet Simulation */
+        .preview-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-bottom: 20px;
+        }
+
+        .a4-sheet-preview {
+            width: 210mm;
+            min-height: 297mm;
+            max-height: 297mm;
+            padding: 12mm 10mm;
+            background: white;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(3, 50.8mm); /* 3 columns of 2 inches */
+            grid-template-rows: repeat(5, 50.8mm);    /* 5 rows of 2 inches */
+            gap: 4mm 6mm;
+            box-sizing: border-box;
+            align-content: start;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .decal-card {
+            width: 50.8mm;  /* Exactly 2 inches */
+            height: 50.8mm; /* Exactly 2 inches */
+            box-sizing: border-box;
+            background: #fff;
+            border: 3px solid #000;
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col xl:flex-row text-slate-900">
+
+    <!-- SIDEBAR FORM & CONTROLS -->
+    <div class="w-full xl:w-[400px] bg-white border-r border-slate-200 p-5 flex flex-col gap-4 shadow-md z-10 xl:h-screen xl:sticky xl:top-0 overflow-y-auto">
+        <div>
+            <h2 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                087 IMUS 1 Decals Maker
+            </h2>
+        </div>
+
+        <form id="decalForm" onsubmit="addDecal(event)" class="space-y-3">
+            <div class="space-y-1">
+                <label class="text-xs font-bold uppercase tracking-wider text-slate-600">Product Name</label>
+                <input type="text" id="itemName" placeholder="" required
+                    class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-black focus:outline-none">
+            </div>
+
+            <!-- Promo Scheme Selector -->
+            <div class="space-y-1">
+                <label class="text-xs font-bold uppercase tracking-wider text-slate-600">Promo Scheme</label>
+                <select id="promoScheme" onchange="handleSchemeChange()"
+                    class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm font-semibold focus:ring-2 focus:ring-black focus:outline-none">
+                    <option value="AUTO">Select Promo Scheme</option>
+                    <option value="B1T1">BUY 1 TAKE 1</option>
+                    <option value="B2T2">BUY 2 TAKE 2</option>
+                    <option value="SAVE50">SAVE 50%</option>
+                    <option value="SAVE30">SAVE 30%</option>
+                    <option value="CUSTOM">Custom Price</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3" id="priceInputsGrid">
+                <div class="space-y-1" id="promoPriceContainer">
+                    <label class="text-xs font-bold uppercase tracking-wider text-slate-600">Promo Price</label>
+                    <input type="number" step="0.01" id="currentPrice" placeholder="0.00" required oninput="calculateSavings()"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-black focus:outline-none">
+                </div>
+                <div class="space-y-1" id="oldPriceContainer">
+                    <label class="text-xs font-bold uppercase tracking-wider text-slate-600" id="oldPriceLabel">Original Price</label>
+                    <input type="number" step="0.01" id="oldPrice" placeholder="0.00" required oninput="calculateSavings()"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-black focus:outline-none">
+                </div>
+            </div>
+
+            <div class="space-y-1">
+                <label class="text-xs font-bold uppercase tracking-wider text-slate-600">Header Badge Text (Auto-Generated)</label>
+                <input type="text" id="savingsText" readonly placeholder="Will generate automatically" required
+                    class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm font-bold text-red-600 bg-slate-100 cursor-not-allowed focus:outline-none">
+            </div>
+
+            <div class="space-y-1">
+                <label class="text-xs font-bold uppercase tracking-wider text-slate-600">Promo Date</label>
+                <input type="text" id="dateRange" placeholder="" required
+                    class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-black focus:outline-none">
+            </div>
+
+            <button type="submit" class="w-full bg-black hover:bg-slate-800 text-white font-bold py-2.5 rounded-md transition text-sm shadow">
+                + Add Decal to Sheet
+            </button>
+        </form>
+
+        <div class="flex gap-2">
+            <button type="button" onclick="undoAction()" id="undoBtn" disabled class="w-1/2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2 rounded transition disabled:opacity-40 disabled:cursor-not-allowed">
+                ↩ Undo
+            </button>
+            <button type="button" onclick="clearAllDecals()" class="w-1/2 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold py-2 rounded transition">
+                Clear All Decals
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN WORKSPACE / LIVE PREVIEW -->
+    <div class="main-workspace flex-1 p-4 sm:p-8 flex flex-col gap-6 overflow-y-auto items-center">
+        <div class="w-full max-w-[210mm] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div>
+                <span class="text-xs font-bold text-slate-500 uppercase">Decal Count: </span>
+                <span id="decalCount" class="text-sm font-black text-slate-900">0</span>
+            </div>
+            <button onclick="saveToPDF()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-lg shadow transition flex items-center gap-2 text-sm whitespace-nowrap">
+                💾 Save to PDF & Local Storage
+            </button>
+        </div>
+
+        <!-- Printable A4 Container Wrapper -->
+        <div id="previewContainer" class="preview-container w-full max-w-[210mm] flex flex-col gap-8 items-center">
+            <!-- Dynamic A4 Pages rendered here -->
+        </div>
+    </div>
+
+    <!-- SUCCESS TOAST NOTIFICATION -->
+    <div id="toast" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-slate-900/95 backdrop-blur text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 scale-95 opacity-0 transition-all duration-300 pointer-events-none border border-slate-700">
+        <div class="w-8 h-8 bg-emerald-500 text-white rounded-full flex items-center justify-center font-bold text-sm shadow">✓</div>
+        <div>
+            <p class="text-sm font-bold">Notification</p>
+            <p id="toastText" class="text-xs text-slate-300">Decals successfully added!</p>
+        </div>
+    </div>
+
+    <script>
+        let decals = [];
+        let undoStack = [];
+
+        window.onload = function() {
+            renderDecals();
+        };
+
+        function showToast(message = 'Decals successfully added!') {
+            const toast = document.getElementById('toast');
+            const toastText = document.getElementById('toastText');
+            if (toastText) toastText.textContent = message;
+            toast.classList.remove('scale-95', 'opacity-0', 'pointer-events-none');
+            toast.classList.add('scale-100', 'opacity-100');
+            
+            setTimeout(() => {
+                toast.classList.remove('scale-100', 'opacity-100');
+                toast.classList.add('scale-95', 'opacity-0', 'pointer-events-none');
+            }, 2000);
+        }
+
+        function saveStateForUndo() {
+            undoStack.push(JSON.stringify(decals));
+            if (undoStack.length > 25) undoStack.shift();
+            updateUndoButtonState();
+        }
+
+        function updateUndoButtonState() {
+            const undoBtn = document.getElementById('undoBtn');
+            if (undoBtn) {
+                undoBtn.disabled = undoStack.length === 0;
+            }
+        }
+
+        function undoAction() {
+            if (undoStack.length > 0) {
+                const prevState = undoStack.pop();
+                decals = JSON.parse(prevState);
+                renderDecals();
+                updateUndoButtonState();
+                showToast('Action undone successfully!');
+            }
+        }
+
+        function handleSchemeChange() {
+            const schemeSelect = document.getElementById('promoScheme').value;
+            const promoPriceContainer = document.getElementById('promoPriceContainer');
+            const oldPriceContainer = document.getElementById('oldPriceContainer');
+            const currentPriceInput = document.getElementById('currentPrice');
+            const savingsInput = document.getElementById('savingsText');
+            const oldPriceLabel = document.getElementById('oldPriceLabel');
+
+            if (schemeSelect === 'CUSTOM' || schemeSelect === 'AUTO') {
+                promoPriceContainer.style.display = 'block';
+                currentPriceInput.setAttribute('required', 'true');
+                oldPriceContainer.className = "space-y-1";
+                oldPriceLabel.textContent = "Original Price";
+                calculateSavings();
+            } else {
+                promoPriceContainer.style.display = 'none';
+                currentPriceInput.removeAttribute('required');
+                currentPriceInput.value = '';
+                oldPriceContainer.className = "col-span-2 space-y-1";
+                
+                if (schemeSelect === 'B1T1') {
+                    oldPriceLabel.textContent = "Unit Price";
+                    savingsInput.value = "BUY 1 TAKE 1 !!";
+                } else if (schemeSelect === 'B2T2') {
+                    oldPriceLabel.textContent = "Unit Price";
+                    savingsInput.value = "BUY 2 TAKE 2 !!";
+                } else if (schemeSelect === 'SAVE50') {
+                    oldPriceLabel.textContent = "Original Price";
+                    savingsInput.value = "SAVE 50% !!";
+                } else if (schemeSelect === 'SAVE30') {
+                    oldPriceLabel.textContent = "Original Price";
+                    savingsInput.value = "SAVE 30% !!";
+                }
+            }
+        }
+
+        function calculateSavings() {
+            const schemeSelect = document.getElementById('promoScheme').value;
+            if (schemeSelect !== 'CUSTOM' && schemeSelect !== 'AUTO') return;
+
+            const curInput = document.getElementById('currentPrice');
+            const oldInput = document.getElementById('oldPrice');
+            const savingsInput = document.getElementById('savingsText');
+
+            let cur = parseFloat(curInput.value);
+            let old = parseFloat(oldInput.value);
+
+            if (!isNaN(cur) && !isNaN(old) && old > cur) {
+                const diff = Math.round(old - cur);
+                const discountPercent = Math.round(((old - cur) / old) * 100);
+
+                if (schemeSelect === 'AUTO') {
+                    if (discountPercent === 50) {
+                        savingsInput.value = "SAVE 50% !!";
+                    } else if (discountPercent === 30) {
+                        savingsInput.value = "SAVE 30% !!";
+                    } else if (discountPercent >= 48 && discountPercent <= 52) {
+                        savingsInput.value = "BUY 1 TAKE 1 !!";
+                    } else {
+                        savingsInput.value = `SAVE P${diff} !!`;
+                    }
+                } else if (schemeSelect === 'CUSTOM') {
+                    savingsInput.value = `SAVE P${diff} !!`;
+                }
+            }
+        }
+
+        function addDecal(e) {
+            e.preventDefault();
+            saveStateForUndo();
+
+            const schemeSelect = document.getElementById('promoScheme').value;
+            let currentPriceVal = document.getElementById('currentPrice').value;
+            const oldPriceVal = parseFloat(document.getElementById('oldPrice').value);
+
+            if (schemeSelect === 'B1T1' || schemeSelect === 'B2T2') {
+                currentPriceVal = oldPriceVal.toFixed(2);
+            } else if (schemeSelect === 'SAVE50') {
+                currentPriceVal = (oldPriceVal * 0.5).toFixed(2);
+            } else if (schemeSelect === 'SAVE30') {
+                currentPriceVal = (oldPriceVal * 0.7).toFixed(2);
+            } else {
+                currentPriceVal = parseFloat(currentPriceVal).toFixed(2);
+            }
+
+            const newItem = {
+                id: Date.now(),
+                name: document.getElementById('itemName').value,
+                currentPrice: currentPriceVal,
+                oldPrice: oldPriceVal.toFixed(2),
+                savings: document.getElementById('savingsText').value,
+                scheme: schemeSelect,
+                symbol: 'P',
+                dates: document.getElementById('dateRange').value
+            };
+
+            decals.push(newItem);
+            renderDecals();
+            showToast('Decal added to page!');
+            
+            document.getElementById('decalForm').reset();
+            document.getElementById('promoScheme').value = 'AUTO';
+            handleSchemeChange();
+            document.getElementById('itemName').focus();
+        }
+
+        function deleteDecal(id) {
+            saveStateForUndo();
+            decals = decals.filter(d => d.id !== id);
+            renderDecals();
+            showToast('Decal deleted!');
+        }
+
+        function clearAllDecals() {
+            if (decals.length === 0) return;
+            saveStateForUndo();
+            decals = [];
+            renderDecals();
+            showToast('All decals cleared!');
+        }
+
+        function saveToPDF() {
+            if (decals.length === 0) {
+                showToast('Sheet is empty. Add decals first!');
+                return;
+            }
+
+            const element = document.getElementById('previewContainer');
+            const opt = {
+                margin:       0,
+                filename:     '7-Eleven-Decals.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(element).outputPdf('datauristring').then(function(pdfDataUri) {
+                try {
+                    localStorage.setItem('saved_7eleven_pdf', pdfDataUri);
+                    showToast('PDF exported & stored locally!');
+                } catch (e) {
+                    console.error('LocalStorage quota exceeded:', e);
+                    showToast('PDF downloaded successfully');
+                }
+                
+                html2pdf().set(opt).from(element).save();
+            });
+        }
+
+        function renderDecals() {
+            const previewContainer = document.getElementById('previewContainer');
+            const decalCountEl = document.getElementById('decalCount');
+
+            previewContainer.innerHTML = '';
+            if (decalCountEl) decalCountEl.textContent = decals.length;
+            updateUndoButtonState();
+
+            if (decals.length === 0) {
+                previewContainer.innerHTML = `
+                    <div class="preview-wrapper">
+                        <div class="a4-sheet-preview items-center justify-center text-slate-400 text-sm text-center">
+                            <div>
+                                <p class="font-bold text-base mb-1">A4 Sheet is Empty</p>
+                                <p class="text-xs">Fill out the form to generate 2"x2" decals.</p>
+                            </div>
+                        </div>
+                    </div>`;
+                return;
+            }
+
+            // Group decals into chunks of 15 (3 columns x 5 rows) per A4 page
+            const pageSize = 15;
+            const pages = [];
+            for (let i = 0; i < decals.length; i += pageSize) {
+                pages.push(decals.slice(i, i + pageSize));
+            }
+
+            pages.forEach((pageDecals, pageIndex) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = "preview-wrapper";
+
+                const a4Page = document.createElement('div');
+                a4Page.className = "a4-sheet-preview a4-page-container relative";
+                
+                const pageBadge = document.createElement('div');
+                pageBadge.className = "absolute -top-3 left-4 bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider z-10";
+                pageBadge.textContent = `A4 Sheet Page ${pageIndex + 1}`;
+                a4Page.appendChild(pageBadge);
+
+                pageDecals.forEach((decal) => {
+                    const isB1T1orB2T2 = decal.scheme === 'B1T1' || decal.scheme === 'B2T2' || 
+                                         decal.savings.toUpperCase().includes('BUY 1 TAKE 1') || 
+                                         decal.savings.toUpperCase().includes('BUY 2 TAKE 2');
+
+                    const card = document.createElement('div');
+                    card.className = "decal-card shadow-sm";
+                    card.innerHTML = `
+                        <!-- Header Section: Savings Header & Before Price (Hidden if Buy 1 Take 1 or Buy 2 Take 2) -->
+                        <div class="flex justify-between items-start leading-none">
+                            <div class="decal-savings signage-font text-[28px] font-black uppercase text-black tracking-tight pt-0.5">
+                                ${escapeHtml(decal.savings)}
+                            </div>
+                            ${isB1T1orB2T2 ? '' : `
+                            <div class="text-right flex flex-col items-end">
+                                <span class="signage-font text-[10px] font-bold uppercase tracking-wider text-black">BEFORE</span>
+                                <div class="decal-before-price signage-font text-[15px] font-black text-black relative inline-flex items-center gap-0.5">
+                                    <span>${decal.symbol}</span>
+                                    <span>${decal.oldPrice}</span>
+                                    <span class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                        <span class="w-[115%] h-[2px] bg-black rotate-[-22deg] transform"></span>
+                                    </span>
+                                </div>
+                            </div>
+                            `}
+                        </div>
+
+                        <!-- Center Section: Currency Symbol & Selling Price -->
+                        <div class="relative w-full text-center my-auto py-0.5">
+                            <div class="absolute left-2 top-0 signage-font text-[15px] font-black text-black leading-none">
+                                ${decal.symbol}
+                            </div>
+                            <div class="decal-main-price signage-font text-[75px] font-black text-black tracking-tighter leading-none inline-block">
+                                ${decal.currentPrice}
+                            </div>
+                        </div>
+
+                        <!-- Bottom Section: Description & Dates -->
+                        <div class="border-t-[1.5px] border-black pt-0.5 flex flex-col gap-0 relative">
+                            <div class="decal-name signage-font text-[15px] font-bold text-black leading-tight tracking-tight uppercase line-clamp-2 pr-5">
+                                ${escapeHtml(decal.name)}
+                            </div>
+                            <div class="decal-dates signage-font text-[13px] font-black text-black tracking-tight leading-none mt-0.5">
+                                ${escapeHtml(decal.dates)}
+                            </div>
+
+                            <!-- Bottom-Right Single-Decal Delete Button -->
+                            <div class="absolute bottom-0 right-0 z-20">
+                                <button onclick="deleteDecal(${decal.id})" title="Delete this decal" class="bg-red-600 hover:bg-red-700 text-white w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shadow cursor-pointer transition">✕</button>
+                            </div>
+                        </div>
+                    `;
+                    a4Page.appendChild(card);
+                });
+
+                wrapper.appendChild(a4Page);
+                previewContainer.appendChild(wrapper);
+            });
+        }
+
+        function escapeHtml(text) {
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+    </script>
+</body>
+</html>
