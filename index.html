@@ -19,6 +19,13 @@
             font-stretch: condensed;
         }
 
+        /* Hide delete buttons when printing */
+        @media print {
+            .decal-delete-btn {
+                display: none !important;
+            }
+        }
+
         /* Screen Preview A4 Sheet Simulation */
         .preview-wrapper {
             width: 100%;
@@ -332,6 +339,11 @@
             }
 
             const element = document.getElementById('previewContainer');
+            
+            // Temporarily hide delete buttons during PDF generation
+            const deleteButtons = document.querySelectorAll('.decal-delete-btn');
+            deleteButtons.forEach(btn => btn.style.display = 'none');
+
             const opt = {
                 margin:       0,
                 filename:     '7-Eleven-Decals.pdf',
@@ -349,7 +361,13 @@
                     showToast('PDF downloaded successfully');
                 }
                 
-                html2pdf().set(opt).from(element).save();
+                html2pdf().set(opt).from(element).save().then(() => {
+                    // Restore delete buttons after saving
+                    deleteButtons.forEach(btn => btn.style.display = '');
+                });
+            }).catch(() => {
+                // Ensure buttons are restored even if an error occurs
+                deleteButtons.forEach(btn => btn.style.display = '');
             });
         }
 
@@ -386,12 +404,7 @@
                 wrapper.className = "preview-wrapper";
 
                 const a4Page = document.createElement('div');
-                a4Page.className = "a4-sheet-preview a4-page-container relative";
-                
-                const pageBadge = document.createElement('div');
-                pageBadge.className = "absolute -top-3 left-4 bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider z-10";
-                pageBadge.textContent = `A4 Sheet Page ${pageIndex + 1}`;
-                a4Page.appendChild(pageBadge);
+                a4Page.className = "a4-sheet-preview a4-page-container";
 
                 pageDecals.forEach((decal) => {
                     const isB1T1orB2T2 = decal.scheme === 'B1T1' || decal.scheme === 'B2T2' || 
@@ -441,7 +454,7 @@
 
                             <!-- Bottom-Right Single-Decal Delete Button -->
                             <div class="absolute bottom-0 right-0 z-20">
-                                <button onclick="deleteDecal(${decal.id})" title="Delete this decal" class="bg-red-600 hover:bg-red-700 text-white w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shadow cursor-pointer transition">✕</button>
+                                <button onclick="deleteDecal(${decal.id})" title="Delete this decal" class="decal-delete-btn bg-red-600 hover:bg-red-700 text-white w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shadow cursor-pointer transition">✕</button>
                             </div>
                         </div>
                     `;
