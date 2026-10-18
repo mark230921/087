@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>087 IMUS 1 | Shelf Tag Generator & Printer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2pdf.js for client-side PDF generation and local storage -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            500: '#2563eb',
+                            600: '#1d4ed8',
+                            700: '#1e40af',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- JsBarcode for barcode rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <!-- Html5Qrcode Library for Camera Scanning -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .mono-font {
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        .signage-font {
+            font-family: 'Oswald', 'Arial Narrow', sans-serif;
+            font-stretch: condensed;
+        }
+
+        /* Compact label sizing for 4 columns across A4 (46mm x 25.4mm) */
+        .shelf-tag {
+            width: 46mm;
+            height: 25.4mm;
+            border: 1.2px solid #000000;
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            padding: 2px 4px 2px 4px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        /* Screen Preview A4 Sheet Simulation */
+        .preview-wrapper {
+            width: 210mm;
+            height: 297mm;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            margin-bottom: 20px;
+            break-after: page;
+            page-break-after: always;
+            transform-origin: top center;
+        }
+
+        .a4-sheet-preview {
+            width: 210mm;
+            height: 297mm;
+            max-height: 297mm;
+            padding: 8mm 7mm;
+            background: white;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            margin: 0;
+            display: grid;
+            grid-template-columns: repeat(4, 46mm);   /* 4 columns across A4 */
+            grid-template-rows: repeat(8, 25.4mm);    /* 8 rows down A4 */
+            gap: 3mm 2.5mm;
+            box-sizing: border-box;
+            align-content: start;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        /* Mobile Scale Wrapper */
+        .mobile-scaler {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            overflow: visible;
+        }
+
+        /* PDF Export / Print Rules */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .mobile-scaler {
+                height: 297mm !important;
+                margin-bottom: 0 !important;
+            }
+            .preview-wrapper {
+                break-after: page;
+                page-break-after: always;
+                margin: 0 !important;
+                padding: 0 !important;
+                height: 297mm !important;
+                box-shadow: none !important;
+                transform: none !important;
+            }
+            .a4-sheet-preview {
+                transform: none !important;
+                box-shadow: none !important;
+                margin: 0 !important;
+            }
+        }
+
+        .pdf-exporting {
+            background: white !important;
+        }
+        .pdf-exporting #previewContainer {
+            gap: 0 !important;
+        }
+        .pdf-exporting .mobile-scaler {
+            height: 297mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .pdf-exporting .preview-wrapper {
+            height: 297mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            transform: none !important;
+        }
+        .pdf-exporting .a4-sheet-preview {
+            height: 297mm !important;
+            max-height: 297mm !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+        }
+
+        /* Scan line animation for camera viewfinder */
+        @keyframes scanAnimation {
+            0% { top: 10%; opacity: 0.2; }
+            50% { opacity: 0.9; }
+            100% { top: 85%; opacity: 0.2; }
+        }
+
+        .scan-line {
+            position: absolute;
+            left: 5%;
+            width: 90%;
+            height: 3px;
+            background: #22c55e;
+            box-shadow: 0 0 12px #22c55e;
+            animation: scanAnimation 2s infinite ease-in-out;
+        }
+
+        /* SVG barcode sizing */
+        .barcode-svg {
+            width: 100%;
+            max-height: 24px;
+            display: block;
+        }
+
+        #interactive-scanner video {
+            object-fit: cover !important;
+            border-radius: 0.75rem;
+            width: 100% !important;
+        }
+
+        /* Responsive Scaling for Preview on Smaller Screens */
+        @media (max-width: 820px) {
+            .mobile-scaler {
+                height: calc(297mm * 0.44);
+                margin-bottom: 10px;
+            }
+            .preview-wrapper {
+                transform: scale(0.44);
+            }
+        }
+        @media (max-width: 500px) {
+            .mobile-scaler {
+                height: calc(297mm * 0.36);
+                margin-bottom: 10px;
+            }
+            .preview-wrapper {
+                transform: scale(0.36);
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col xl:flex-row text-slate-900">
+
+    <!-- SIDEBAR FORM & CONTROLS -->
+    <div class="w-full xl:w-[420px] bg-white border-r border-slate-200 p-5 flex flex-col gap-4 shadow-md z-10 xl:h-screen xl:sticky xl:top-0 overflow-y-auto no-print">
+        <div class="text-center flex justify-center items-center">
+            <h2 class="text-lg font-black text-slate-900 flex items-center justify-center gap-2 text-center w-full"> 087 IMUS 1 Planogram Maker</h2>
+        </div>
+
+        <form id="customTagForm" onsubmit="handleCustomSubmit(event)" class="space-y-3">
+            <div class="space-y-1">
+                <label class="text-xs font-bold uppercase tracking-wider text-slate-600">Product Name</label>
+                <input type="text" id="formName" required placeholder="" 
+                    class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-black focus:outline-none">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="space-y-1">
+                    <label class="text-xs font-bold uppercase tracking-wider text-slate-600">Price</label>
+                    <input type="number" step="0.01" id="formPrice" required placeholder="" 
+                        class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm font-semibold focus:ring-2 focus:ring-black focus:outline-none">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-xs font-bold uppercase tracking-wider text-slate-600">Barcode</label>
+                    <div class="flex gap-1.5">
+                        <input type="number" id="formBarcode" required placeholder="" 
+                            class="w-full px-2 py-2 border border-slate-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-black focus:outline-none">
+                        <button type="button" onclick="openScannerModal()" title="Scan using Camera" 
+                            class="px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-bold transition flex items-center justify-center shrink-0">
+                            <i class="fa-solid fa-camera"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-600">Store No.</label>
+                    <input type="number" id="formDeptCode" placeholder="" value=""
+                        class="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs font-mono">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-600">Category No.</label>
+                    <input type="number" id="formPackSize" placeholder="" value=""
+                        class="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold uppercase tracking-wider text-slate-600">Location</label>
+                    <input type="text" id="formLocation" placeholder="" value=""
+                        class="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs">
+                </div>
+            </div>
+
+            <button type="submit" class="w-full bg-black hover:bg-slate-800 text-white font-bold py-2.5 rounded-md transition text-sm shadow flex items-center justify-center gap-2">
+                <i class="fa-solid fa-plus-circle"></i> Add Tag to Sheet
+            </button>
+            
+            <!-- Flex Container for Undo and Clear All Tags Buttons -->
+            <div class="flex gap-2">
+                <button type="button" onclick="undoLastTag()" id="undoBtn" class="flex-1 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold py-2 rounded transition flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-rotate-left"></i> Undo
+                </button>
+                <button type="button" onclick="clearAllTags()" class="flex-1 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold py-2 rounded transition flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-trash-can"></i> Clear All Tags
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- MAIN WORKSPACE / LIVE PREVIEW -->
+    <div class="main-workspace flex-1 p-4 sm:p-8 flex flex-col gap-6 overflow-y-auto items-center">
+        <div class="w-full max-w-[210mm] bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 no-print">
+            <div>
+                <span class="text-xs font-bold text-slate-500 uppercase">Tag Count: </span>
+                <span id="queueBadge" class="text-sm font-black text-slate-900">0</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="saveToPDF()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-lg shadow transition flex items-center gap-2 text-sm whitespace-nowrap">
+                    <i class="fa-solid fa-file-pdf"></i> Save to PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- EMPTY STATE -->
+        <div id="emptyState" class="w-full max-w-[210mm] aspect-[1/1.414] bg-white rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 text-sm text-center p-12 shadow-sm my-auto no-print">
+            <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 mb-3 text-2xl font-bold">
+                <i class="fa-solid fa-barcode"></i>
+            </div>
+            <p class="font-bold text-base text-slate-700 mb-1">A4 Sheet is Empty</p>
+            <p class="text-xs text-slate-500 max-w-sm">Add tags using the form to automatically lay them out in 4x8 format on A4 sheets.</p>
+        </div>
+
+        <!-- TAG CONTAINER (A4 PAGES WRAPPER) -->
+        <div id="previewContainer" class="w-full max-w-[210mm] flex flex-col items-center">
+            <!-- Dynamic A4 Pages Render Here -->
+        </div>
+    </div>
+
+    <!-- CAMERA SCANNER MODAL OVERLAY -->
+    <div id="scannerModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col border border-slate-700">
+            <!-- Modal Header -->
+            <div class="bg-slate-900 text-white p-4 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-camera text-indigo-400"></i>
+                    <h3 class="font-bold text-base">Barcode Camera Scanner</h3>
+                </div>
+                <button onclick="closeScannerModal()" class="text-slate-400 hover:text-white transition w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-800">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Viewfinder Area -->
+            <div class="p-4 bg-slate-950 flex flex-col items-center justify-center relative min-h-[300px]">
+                <div id="interactive-scanner" class="w-full rounded-xl overflow-hidden relative"></div>
+                
+                <!-- Viewfinder Overlay Box -->
+                <div id="scannerOverlay" class="absolute inset-4 pointer-events-none border-2 border-indigo-500/40 rounded-xl flex items-center justify-center hidden">
+                    <div class="w-64 h-36 border-2 border-dashed border-emerald-400 rounded-lg relative overflow-hidden bg-emerald-500/5">
+                        <div class="scan-line"></div>
+                    </div>
+                </div>
+
+                <!-- Camera Status / Helper text -->
+                <p id="cameraStatusText" class="text-xs text-slate-400 mt-3 text-center">
+                    Initializing camera access...
+                </p>
+            </div>
+
+            <!-- Modal Footer Controls -->
+            <div class="p-4 bg-slate-100 flex items-center justify-between border-t border-slate-200">
+                <button id="switchCamBtn" onclick="switchCamera()" class="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold rounded-lg transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-camera-rotate"></i> Switch Camera
+                </button>
+                <button onclick="closeScannerModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg transition">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOTIFICATION TOAST -->
+    <div id="toast" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-slate-900/95 backdrop-blur text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 scale-95 opacity-0 transition-all duration-300 pointer-events-none border border-slate-700">
+        <div id="toastIconContainer" class="w-8 h-8 bg-emerald-500 text-white rounded-full flex items-center justify-center font-bold text-sm shadow">✓</div>
+        <div>
+            <p class="text-sm font-bold">Notification</p>
+            <p id="toastMsg" class="text-xs text-slate-300">Tag generated successfully!</p>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        let generatedTags = [];
+        let html5QrcodeScanner = null;
+        let currentFacingMode = "environment";
+
+        window.addEventListener('DOMContentLoaded', () => {
+            // Optional initial setup
+        });
+
+        function showToast(msg, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            toastMsg.innerText = msg;
+            
+            toast.classList.remove('scale-95', 'opacity-0', 'pointer-events-none');
+            toast.classList.add('scale-100', 'opacity-100');
+            
+            setTimeout(() => {
+                toast.classList.remove('scale-100', 'opacity-100');
+                toast.classList.add('scale-95', 'opacity-0', 'pointer-events-none');
+            }, 2000);
+        }
+
+        function handleCustomSubmit(event) {
+            event.preventDefault();
+            
+            const name = document.getElementById('formName').value.trim();
+            const price = parseFloat(document.getElementById('formPrice').value || 0).toFixed(2);
+            const barcode = document.getElementById('formBarcode').value.trim();
+            const sku = document.getElementById('formDeptCode').value.trim();
+            const pack = document.getElementById('formPackSize').value.trim();
+            const location = document.getElementById('formLocation').value.trim();
+
+            if (!name) {
+                showToast('Please enter a product description.');
+                return;
+            }
+
+            const customItem = {
+                barcode: barcode,
+                sku: sku,
+                name: name,
+                price: price,
+                pack: pack,
+                location: location,
+                dateCode: getFormattedDateCode()
+            };
+
+            addTagToQueue(customItem);
+            showToast('Tag added to queue!');
+
+            // Automatically clear all form input fields after submitting
+            event.target.reset();
+            // Automatically focus back to the product name input field
+            document.getElementById('formName').focus();
+        }
+
+        function addTagToQueue(tagData) {
+            const newTag = {
+                id: 'tag_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                ...tagData
+            };
+            
+            generatedTags.push(newTag);
+            renderTags();
+        }
+
+        function removeTag(tagId) {
+            generatedTags = generatedTags.filter(t => t.id !== tagId);
+            renderTags();
+            showToast('Tag removed from queue');
+        }
+
+        function undoLastTag() {
+            if (generatedTags.length === 0) {
+                showToast('No tags to undo');
+                return;
+            }
+            const removed = generatedTags.pop();
+            renderTags();
+            showToast(`Undid tag: ${removed.name || 'Last tag'}`);
+        }
+
+        function clearAllTags() {
+            if (generatedTags.length === 0) return;
+            generatedTags = [];
+            renderTags();
+            showToast('All tags cleared');
+        }
+
+        function renderTags() {
+            const previewContainer = document.getElementById('previewContainer');
+            const emptyState = document.getElementById('emptyState');
+            const queueBadge = document.getElementById('queueBadge');
+
+            queueBadge.innerText = generatedTags.length;
+
+            if (generatedTags.length === 0) {
+                previewContainer.innerHTML = '';
+                emptyState.style.display = 'flex';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            previewContainer.innerHTML = '';
+
+            // Group tags into pages of 32 (4 columns x 8 rows per A4 sheet)
+            const pageSize = 32;
+            const pages = [];
+            for (let i = 0; i < generatedTags.length; i += pageSize) {
+                pages.push(generatedTags.slice(i, i + pageSize));
+            }
+
+            pages.forEach((pageTags) => {
+                const scaler = document.createElement('div');
+                scaler.className = "mobile-scaler";
+
+                const wrapper = document.createElement('div');
+                wrapper.className = "preview-wrapper";
+
+                const a4Page = document.createElement('div');
+                a4Page.className = "a4-sheet-preview";
+
+                pageTags.forEach(tag => {
+                    const card = document.createElement('div');
+                    card.className = "shelf-tag shadow-sm";
+                    card.id = tag.id;
+
+                    const hasSku = tag.sku && tag.sku.trim() !== '';
+                    const hasPack = tag.pack && tag.pack.trim() !== '';
+                    const hasLocation = tag.location && tag.location.trim() !== '';
+
+                    card.innerHTML = `
+                        <!-- Product Description (signage font, 16px font size, bold & uppercase, condensed & wraps to fit width) -->
+                        <div class="text-[16px] signage-font font-bold tracking-tight text-black whitespace-normal break-words uppercase pr-2 leading-none">
+                            ${escapeHtml(tag.name)}
+                        </div>
+
+                        <!-- Price Section -->
+                        <div class="flex items-baseline gap-1 my-0.5">
+                            <span class="text-xs font-normal text-black font-sans">P</span>
+                            <span class="text-[25px] font-semibold text-black tracking-tight leading-none font-sans">
+                                ${tag.price}
+                            </span>
+                        </div>
+
+                        <!-- Barcode Rendering -->
+                        <div class="w-full flex justify-center items-center my-0">
+                            <svg id="barcode_${tag.id}" class="barcode-svg"></svg>
+                        </div>
+
+                        <!-- Bottom Metadata & Single-Tag Delete Button at Bottom-Right -->
+                        <div class="flex items-center justify-between text-[7.5px] font-mono font-medium text-black pt-0.5 relative">
+                            ${hasSku ? `<span>${escapeHtml(tag.sku)}</span>` : '<span></span>'}
+                            ${hasPack ? `<span>[${escapeHtml(tag.pack)}]</span>` : '<span></span>'}
+                            ${hasLocation ? `<span class="tracking-wider pr-3">${escapeHtml(tag.location)}</span>` : '<span class="pr-3"></span>'}
+                            <span>${escapeHtml(tag.dateCode)}</span>
+
+                            <!-- Bottom-Right Single-Tag Delete Button -->
+                            <button onclick="removeTag('${tag.id}')" title="Delete this tag" 
+                                class="no-print decal-delete-btn absolute -bottom-0.5 -right-0.5 z-20 bg-red-600 hover:bg-red-700 text-white w-3.5 h-3.5 rounded-full text-[8px] font-bold flex items-center justify-center shadow cursor-pointer transition">
+                                ✕
+                            </button>
+                        </div>
+                    `;
+                    a4Page.appendChild(card);
+                });
+
+                wrapper.appendChild(a4Page);
+                scaler.appendChild(wrapper);
+                previewContainer.appendChild(scaler);
+            });
+
+            // Render crisp Barcodes using JsBarcode
+            generatedTags.forEach(tag => {
+                const barcodeValue = tag.barcode || "261014";
+                try {
+                    JsBarcode(`#barcode_${tag.id}`, barcodeValue, {
+                        format: "CODE128",
+                        width: 1.1,
+                        height: 24,
+                        displayValue: false,
+                        margin: 0,
+                        background: "#ffffff",
+                        lineColor: "#000000"
+                    });
+                } catch (e) {
+                    console.warn(`Fallback barcode encoding for ${tag.id}`);
+                }
+            });
+        }
+
+        // Save to PDF function exporting A4 sheet wrapper cleanly
+        function saveToPDF() {
+            if (generatedTags.length === 0) {
+                showToast('Tag queue is empty. Add tags first!');
+                return;
+            }
+
+            const element = document.getElementById('previewContainer');
+            element.classList.add('pdf-exporting');
+
+            // Hide delete buttons during PDF generation
+            const deleteBtns = element.querySelectorAll('.decal-delete-btn');
+            deleteBtns.forEach(btn => btn.style.display = 'none');
+
+            const opt = {
+                margin:       0,
+                filename:     '087-IMUS-1-Shelf-Tags-A4.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, scrollX: 0, scrollY: 0 },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(element).outputPdf('datauristring').then(function(pdfDataUri) {
+                try {
+                    localStorage.setItem('saved_shelf_tags_pdf', pdfDataUri);
+                    showToast('PDF exported & stored locally!');
+                } catch (e) {
+                    console.error('LocalStorage quota exceeded:', e);
+                    showToast('PDF downloaded successfully');
+                }
+                
+                html2pdf().set(opt).from(element).save().then(() => {
+                    element.classList.remove('pdf-exporting');
+                    deleteBtns.forEach(btn => btn.style.display = '');
+                });
+            }).catch(() => {
+                element.classList.remove('pdf-exporting');
+                deleteBtns.forEach(btn => btn.style.display = '');
+            });
+        }
+
+        function openScannerModal() {
+            const modal = document.getElementById('scannerModal');
+            modal.classList.remove('hidden');
+            document.getElementById('scannerOverlay').classList.add('hidden');
+            document.getElementById('cameraStatusText').innerText = "Starting camera...";
+            startCameraScanner(currentFacingMode);
+        }
+
+        function closeScannerModal() {
+            const modal = document.getElementById('scannerModal');
+            modal.classList.add('hidden');
+
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    html5QrcodeScanner.clear();
+                    html5QrcodeScanner = null;
+                }).catch(() => {
+                    html5QrcodeScanner = null;
+                });
+            }
+        }
+
+        function startCameraScanner(facingMode) {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    initScanner(facingMode);
+                }).catch(() => initScanner(facingMode));
+            } else {
+                initScanner(facingMode);
+            }
+        }
+
+        function initScanner(facingMode) {
+            html5QrcodeScanner = new Html5Qrcode("interactive-scanner");
+            const config = { fps: 15, qrbox: { width: 260, height: 140 }, aspectRatio: 1.333333 };
+
+            html5QrcodeScanner.start(
+                { facingMode: facingMode },
+                config,
+                (decodedText) => {
+                    if (!decodedText) return;
+                    if (navigator.vibrate) navigator.vibrate(100);
+
+                    const barcodeField = document.getElementById('formBarcode');
+                    barcodeField.value = decodedText;
+                    showToast(`Scanned Barcode: ${decodedText}`);
+
+                    closeScannerModal();
+                },
+                () => {}
+            ).then(() => {
+                document.getElementById('cameraStatusText').innerText = "Align barcode inside frame to scan";
+                document.getElementById('scannerOverlay').classList.remove('hidden');
+            }).catch(() => {
+                document.getElementById('cameraStatusText').innerText = "Camera permission denied or camera unavailable.";
+            });
+        }
+
+        function switchCamera() {
+            currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+            startCameraScanner(currentFacingMode);
+        }
+
+        function getFormattedDateCode() {
+            const d = new Date();
+            const yy = String(d.getFullYear()).slice(-2);
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${mm}${dd}${yy}`; // Formatted as MMDDYY
+        }
+
+        function escapeHtml(str) {
+            return str ? str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : '';
+        }
+    </script>
+</body>
+</html>
